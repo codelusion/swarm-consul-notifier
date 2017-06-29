@@ -5,6 +5,7 @@ import sys
 import logging
 import docker
 import consul
+import os
 
 logger = logging.getLogger(__name__)
 args = None
@@ -209,7 +210,8 @@ def main():
 
     # create a docker client object that talks to the local docker daemon
     cli = docker.Client(base_url='unix://var/run/docker.sock')
-    con = consul.Consul()
+    consul_host = os.environ.get('CONSUL_ADDR', '127.0.0.1')
+    con = consul.Consul(host=consul_host)
 
     logger.info("Consul notifier processing {0}".format(args.action))
 
