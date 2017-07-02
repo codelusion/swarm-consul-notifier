@@ -146,7 +146,7 @@ Register / De-register services manually or via Docker Daemon event stream
 
 
 def stream(cli, con):
-    '''
+    """
     Connect to the docker daemon and listen for events
     possible events are:
         attach, commit, copy, create, destroy, die
@@ -177,7 +177,7 @@ def stream(cli, con):
             'id': '8217cb8565dd774f316c3e51b0f88551e3337edffb087f28db75fb7126160641'
         }
 
-    '''
+    """
 
     # start listening for new events
     for event in cli.events(decode=True):
@@ -201,16 +201,18 @@ def stream(cli, con):
 
 
 def main():
-    '''
+    """
         Register / De-register containers that have
         CONSUL_SERVICE_PORT env variable defined
-    '''
+    """
     args = handler_args()
     setup_logging(args.verbose)
 
     # create a docker client object that talks to the local docker daemon
     cli = docker.Client(base_url='unix://var/run/docker.sock')
+
     consul_host = os.environ.get('CONSUL_ADDR', '127.0.0.1')
+    logger.info("Consul Host: {0}".format(consul_host))
     con = consul.Consul(host=consul_host)
 
     logger.info("Consul notifier processing {0}".format(args.action))
