@@ -14,21 +14,6 @@ args = None
 
 # docker run -v /var/run/docker.sock:/var/run/docker.sock consul-notifier
 
-
-def setup_logging(verbose=False):
-    """
-    Setup logging
-    :param verbose: bool - Enable verbose debug mode
-    """
-
-    ch = logging.StreamHandler()
-    ch.setFormatter(logging.Formatter('[%(asctime)s] %(message)s'))
-    logger.addHandler(ch)
-    logger.setLevel(logging.INFO)
-    if verbose:
-        logger.setLevel(logging.DEBUG)
-
-
 class Service(object):
     def __init__(self, docker_client, consul_instance, name, service):
 
@@ -83,7 +68,7 @@ class Service(object):
             self.svc_spec['container_id'] = self.get_id()
 
             if args.verbose:
-                print(json.dumps(self.container, sort_keys=True, indent=4))
+                object_dump(self.container, "Container Object")
 
             getattr(self, self.status_map[action])()
         else:
@@ -91,9 +76,7 @@ class Service(object):
 
     def register(self):
         if not self.svc_spec['port']:
-            logger.info(
-                "Skipping registration of {0} not port defined".format(
-                    self.service))
+            logger.info("Skipping registration of {0} not port defined".format(self.service))
             return
 
         logger.info("Registering {0} {1} port {2}".format(
@@ -101,7 +84,8 @@ class Service(object):
             self.svc_spec['container_id'],
             self.svc_spec['port']))
 
-        print(json.dumps(self.svc_spec, sort_keys=True, indent=4))
+        if args.verbose:
+            object_dump(self.svc_spec, "Service specs")
 
         for node_addr in self.get_swarm_nodes_addr():
             res = self.consul_instance.agent.service.register(
@@ -111,12 +95,14 @@ class Service(object):
                 service_id=self.svc_spec['container_id'],
                 port=int(self.svc_spec['port']))
 
+            logger.info("Service registration response: {0}".format(res))
             if not res:
                 logger.error("Failed to register service at node: {0}".format(node_addr))
 
     def get_swarm_nodes_addr(self):
         nodes = self.docker_client.nodes()
-        print(json.dumps(nodes, sort_keys=True, indent=4))
+        if args.verbose:
+            object_dump(nodes, "Swarm Nodes")
         return [node['Status']['Addr'] for node in nodes]
 
     def get_health_check_url(self, node_addr):
@@ -143,33 +129,6 @@ class Service(object):
             logger.error("Failed to de-register service")
 
 
-
-def handler_args():
-    global args
-
-    help_text = '''
-Register / De-register services manually or via Docker Daemon event stream
-    '''
-
-    parser = argparse.ArgumentParser(
-        description=help_text,
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-
-    parser.add_argument('--verbose', '-v', action="count", default=0,
-                        help='Verbose Logging')
-
-    parser.add_argument('--action', '-a', default='stream',
-                        help='Notification action (stream, register, deregister)')
-
-    parser.add_argument('--name', '-n', default=None,
-                        help='Container Name')
-
-    args = parser.parse_args()
-
-    return args
-
-
 def stream(docker_client, consul_instance):
     """
     Connect to the docker daemon and listen for events
@@ -190,14 +149,53 @@ def stream(docker_client, consul_instance):
         name = event['Actor']['Attributes']['name']
         service = event['Actor']['Attributes'][service_key]
         action = event['Action']
+        logger.info("Processing {0} event {1}".format(action, name))
 
-        print("-" * 80)
-        print("Processing {0} event {1}".format(action, name))
-        print (json.dumps(event, sort_keys=True, indent=4))
-        print("-" * 80)
-
+        if args.verbose:
+            object_dump(event, "Event Object: {0} Name: {1}".format(action, name))
         s = Service(docker_client, consul_instance, name, service)
         s.handle(action)
+
+
+def object_dump(obj, description=""):
+    if obj:
+        print("-" * 80)
+        if description:
+            print(description)
+            print("")
+        print (json.dumps(obj, sort_keys=True, indent=4))
+        print("-" * 80)
+
+
+def setup_logging(verbose=False):
+    """
+    Setup logging
+    :param verbose: bool - Enable verbose debug mode
+    """
+
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter('[%(asctime)s] %(message)s'))
+    logger.addHandler(ch)
+    logger.setLevel(logging.INFO)
+    if verbose:
+        logger.setLevel(logging.DEBUG)
+
+
+def handler_args():
+    global args
+
+    help_text = '''
+        Auto-registration and de-registration of Docker Swarm services via Docker daemon event stream
+        Use --verbose to see event objects in service logs
+    '''
+    parser = argparse.ArgumentParser(
+        description=help_text,
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument('--verbose', '-v', action="count", default=0,
+                        help='Verbose Logging')
+    args = parser.parse_args()
+    return args
 
 
 def main():
@@ -209,22 +207,19 @@ def main():
     args = handler_args()
     setup_logging(args.verbose)
 
-    # create a docker client object that talks to the local docker daemon
-    docker_client = docker.Client(base_url='unix://var/run/docker.sock')
+    docker_socket = os.environ.get('DOCKER_SOCKET', 'unix://var/run/docker.sock')
+    # create a Docker client object that talks to the local docker daemon
+    logger.info("Docker socket: {0}".format(docker_socket))
+    docker_client = docker.Client(base_url=docker_socket)
 
+    # create a Consul client to connect to Consul Agent
     consul_host = os.environ.get('CONSUL_ADDR', '127.0.0.1')
     logger.info("Consul Host: {0}".format(consul_host))
     consul_instance = consul.Consul(host=consul_host)
 
-    logger.info("Consul notifier processing {0}".format(args.action))
-
-    if args.action == 'stream':
-        stream(docker_client, consul_instance)
-    elif args.action in ['register', 'deregister']:
-        s = Service(docker_client, consul_instance, args.name, None)
-        s.handle(args.action)
-    else:
-        logger.error("Unknown action {0}".format(args.action))
+    logger.info("Consul notifier ready to process Docker daemon event stream")
+    logger.info("Logging Verbosity: {0}".format(args.verbose))
+    stream(docker_client, consul_instance)
 
 
 if __name__ == '__main__':
