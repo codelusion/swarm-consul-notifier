@@ -116,10 +116,16 @@ class ServiceEvent(object):
         """
         Generate the list of swarm node IP addresses
         """
-        nodes = self.docker_client.nodes()
-        if args.verbose:
-            object_dump(nodes, "Swarm Nodes")
-        return [node['Status']['Addr'] for node in nodes]
+        info = self.docker_client.info()
+        # # Is this a Manager node?
+        # if info['Swarm']['ControlAvailable']:
+        #     nodes = self.docker_client.nodes()
+        #     if args.verbose:
+        #         object_dump(nodes, "Swarm Nodes")
+        #     return [node['Status']['Addr'] for node in nodes]
+        # # worker node
+        # else:
+        return [info['Swarm']['NodeAddr']]
 
     def get_health_check_url(self, node_addr):
         """
@@ -237,6 +243,8 @@ def main():
     # create a Docker client object that talks to the local docker daemon
     logger.info("Docker socket: {0}".format(docker_socket))
     docker_client = docker.Client(base_url=docker_socket)
+    if args.verbose:
+        object_dump(docker_client.info(), "Docker :Info")
 
     # create a Consul client to connect to Consul Agent
     consul_host = os.environ.get('CONSUL_ADDR', '127.0.0.1')
