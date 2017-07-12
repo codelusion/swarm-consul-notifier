@@ -1,7 +1,6 @@
-# Docker consul notifier
-# Temporary replacement for registrator that works
-# with Docker services
-
+# Docker swarm consul notifier
+# Auto-registration/de-registration of Docker Swarm services in Consul
+# by hooking into Docker daemon event stream
 FROM frolvlad/alpine-python2
 
 USER root

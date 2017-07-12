@@ -1,20 +1,21 @@
 #!/usr/bin/python
 import argparse
 import json
-import sys
 import logging
+import os
 import docker
 from docker import errors
 import consul
-import os
 
 logger = logging.getLogger(__name__)
 args = None
 
-
-# docker run -v /var/run/docker.sock:/var/run/docker.sock consul-notifier
-
-class Service(object):
+class ServiceEvent(object):
+    """
+    A Service related event from the Docker daemon
+    Docker events are processed as a stream:
+    # docker run -v /var/run/docker.sock:/var/run/docker.sock consul-notifier
+    """
     def __init__(self, docker_client, consul_instance, name, service):
 
         # http://gliderlabs.com/blog/2015/04/14/docker-events-explained/
@@ -35,18 +36,27 @@ class Service(object):
         self.svc_spec = {}
 
     def get_env(self, env_key):
+        """
+        Extract service-level env vars
+        """
         for nv in self.svc_spec['env']:
             n, v = str(nv).split('=')
             if n == env_key:
                 return v
 
     def get_id(self):
+        """
+        Build a unique Service ID
+        """
         return "{0}:{1}:{2}".format(
             self.svc_spec['hostname'],
             self.svc_spec['container_name'],
             self.svc_spec['port'])
 
     def handle(self, action):
+        """
+        Process Service event
+        """
         if (action in self.status_map and
                 hasattr(self, self.status_map[action])):
 
@@ -75,6 +85,9 @@ class Service(object):
             logger.warning("Ignoring action {0}".format(action))
 
     def register(self):
+        """
+        Register service with Consul instance
+        """
         if not self.svc_spec['port']:
             logger.info("Skipping registration of {0} not port defined".format(self.service))
             return
@@ -100,12 +113,18 @@ class Service(object):
                 logger.error("Failed to register service at node: {0}".format(node_addr))
 
     def get_swarm_nodes_addr(self):
+        """
+        Generate the list of swarm node IP addresses
+        """
         nodes = self.docker_client.nodes()
         if args.verbose:
             object_dump(nodes, "Swarm Nodes")
         return [node['Status']['Addr'] for node in nodes]
 
     def get_health_check_url(self, node_addr):
+        """
+        Build health check URL for service
+        """
         proto = 'https' if self.svc_spec['health_check_ssl'] else 'http'
         if not self.svc_spec['health_check'] or self.svc_spec['health_check'] == '/':
             return "%s://%s:%s/" % (proto, node_addr, self.svc_spec['port'])
@@ -113,6 +132,9 @@ class Service(object):
             return "%s://%s:%s%s" % (proto, node_addr, self.svc_spec['port'], self.svc_spec['health_check'])
 
     def deregister(self):
+        """
+        Remove service from Consul
+        """
         if not self.svc_spec['port']:
             logger.info(
                 "Skipping de-registration of {0} not port defined".format(
@@ -153,11 +175,14 @@ def stream(docker_client, consul_instance):
 
         if args.verbose:
             object_dump(event, "Event Object: {0} Name: {1}".format(action, name))
-        s = Service(docker_client, consul_instance, name, service)
+        s = ServiceEvent(docker_client, consul_instance, name, service)
         s.handle(action)
 
 
 def object_dump(obj, description=""):
+    """
+    Dump objects for verbose logging
+    """
     if obj:
         print("-" * 80)
         if description:
@@ -185,7 +210,8 @@ def handler_args():
     global args
 
     help_text = '''
-        Auto-registration and de-registration of Docker Swarm services via Docker daemon event stream
+        Auto-registration and de-registration of Docker Swarm services 
+        via Docker daemon event stream
         Use --verbose to see event objects in service logs
     '''
     parser = argparse.ArgumentParser(
