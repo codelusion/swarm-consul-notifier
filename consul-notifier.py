@@ -10,12 +10,14 @@ import consul
 logger = logging.getLogger(__name__)
 args = None
 
+
 class ServiceEvent(object):
     """
     A Service related event from the Docker daemon
     Docker events are processed as a stream:
     # docker run -v /var/run/docker.sock:/var/run/docker.sock consul-notifier
     """
+
     def __init__(self, docker_client, consul_instance, name, service):
 
         # http://gliderlabs.com/blog/2015/04/14/docker-events-explained/
@@ -40,9 +42,11 @@ class ServiceEvent(object):
         Extract service-level env vars
         """
         for nv in self.svc_spec['env']:
-            n, v = str(nv).split('=')
-            if n == env_key:
-                return v
+            if nv.count('=') == 1:
+                n, v = str(nv).split('=')
+                if n == env_key:
+                    return v
+        return False
 
     def get_id(self):
         """
@@ -66,11 +70,19 @@ class ServiceEvent(object):
                 logger.warning("NotFound: Cannot handle {0} on Container {1}".format(self.name, action))
                 return
 
+            if args.verbose:
+                object_dump(self.container, "Container Object")
+
             self.svc_spec['env'] = self.container['Config']['Env']
+
             self.svc_spec['hostname'] = self.container['Config']['Hostname']
             self.svc_spec['port'] = self.get_env('CONSUL_SERVICE_PORT') or None
             self.svc_spec['health_check'] = self.get_env('CONSUL_HEALTH_CHECK') or ''
-            self.svc_spec['health_check_interval'] = self.get_env('CONSUL_HEALTH_INTERVAL') or 10
+            self.svc_spec['health_check_interval'] = self.get_env('CONSUL_HEALTH_INTERVAL') or '10s'
+
+            # default seconds, ex. '10s'
+            if 's' not in self.svc_spec['health_check_interval']:
+                self.svc_spec['health_check_interval'] = "%ss" % self.svc_spec['health_check_interval']
             self.svc_spec['health_check_ssl'] = self.get_env('CONSUL_HEALTH_SSL') or False
 
             # Strip the leading slash
@@ -78,7 +90,7 @@ class ServiceEvent(object):
             self.svc_spec['container_id'] = self.get_id()
 
             if args.verbose:
-                object_dump(self.container, "Container Object")
+                object_dump(self.svc_spec, "Service Spec")
 
             getattr(self, self.status_map[action])()
         else:
