@@ -4,11 +4,10 @@
 FROM frolvlad/alpine-python2
 
 USER root
-RUN apk add --update \
-  && pip install virtualenv docker-py python-consul
 
 WORKDIR /app
-
 COPY . /app
+
+RUN pip install -r requirements.txt
 
 ENTRYPOINT ["python", "consul-notifier.py"]

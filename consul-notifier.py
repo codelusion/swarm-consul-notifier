@@ -101,7 +101,7 @@ class ServiceEvent(object):
         Register service with Consul instance
         """
         if not self.svc_spec['port']:
-            logger.info("Skipping registration of {0} not port defined".format(self.service))
+            logger.info("Skipping registration of {0} port not defined".format(self.service))
             return
 
         logger.info("Registering {0} {1} port {2}".format(
@@ -155,7 +155,7 @@ class ServiceEvent(object):
         """
         if not self.svc_spec['port']:
             logger.info(
-                "Skipping de-registration of {0} not port defined".format(
+                "Skipping de-registration of {0} port not defined".format(
                     self.service))
             return
 
@@ -262,6 +262,18 @@ def main():
     consul_host = os.environ.get('CONSUL_ADDR', '127.0.0.1')
     logger.info("Consul Host: {0}".format(consul_host))
     consul_instance = consul.Consul(host=consul_host)
+
+    # Register existing services
+    containers = docker_client.containers()
+    if containers:
+        for container in containers:
+            # Is it a service?
+            if container['Labels'].get('com.docker.swarm.service.name'):
+                service = container['Labels'].get('com.docker.swarm.service.name')
+                name = container['Id']
+                logger.info("Registering pre-existing service: %s" % service)
+                s = ServiceEvent(docker_client, consul_instance, name, service)
+                s.handle('register')
 
     logger.info("Consul notifier ready to process Docker daemon event stream")
     logger.info("Logging Verbosity: {0}".format(args.verbose))
