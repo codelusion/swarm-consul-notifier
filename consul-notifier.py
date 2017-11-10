@@ -78,6 +78,7 @@ class ServiceEvent(object):
             self.svc_spec['hostname'] = self.container['Config']['Hostname']
             self.svc_spec['port'] = self.get_env('CONSUL_SERVICE_PORT') or None
             self.svc_spec['health_check'] = self.get_env('CONSUL_HEALTH_CHECK') or ''
+            self.svc_spec['tls_skip_verify'] = self.get_env('CONSUL_HEALTH_TLS_SKIP_VERIFY') or False
             self.svc_spec['health_check_interval'] = self.get_env('CONSUL_HEALTH_INTERVAL') or '10s'
 
             # default seconds, ex. '10s'
@@ -113,10 +114,13 @@ class ServiceEvent(object):
             object_dump(self.svc_spec, "Service specs")
 
         for node_addr in self.get_swarm_nodes_addr():
+            check = consul.Check.http(self.get_health_check_url(node_addr), self.svc_spec['health_check_interval'])
+            if self.svc_spec['tls_skip_verify']:
+                check['tls_skip_verify'] = True
             res = self.consul_instance.agent.service.register(
                 self.service,
                 address=node_addr,
-                check=consul.Check.http(self.get_health_check_url(node_addr), self.svc_spec['health_check_interval']),
+                check=check,
                 service_id=self.svc_spec['container_id'],
                 port=int(self.svc_spec['port']))
 
